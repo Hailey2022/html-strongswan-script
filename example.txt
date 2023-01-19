@@ -1,2 +1,150 @@
-{{server_ip}}
-{{iface}}
+apt-get update
+apt-get install gcc automake autoconf libtss2-dev libssl-dev libsystemd-dev libtss2-tcti-tabrmd0  libtss2-dev pkg-config build-essential -y
+wget https://download.strongswan.org/strongswan-5.9.9.tar.gz
+
+tar xzvf strongswan-5.9.9.tar.gz
+cd strongswan-5.9.9/
+
+./configure --prefix=/usr --sysconfdir=/etc --with-systemdsystemunitdir=/lib/systemd/system --enable-eap-identity --enable-eap-mschapv2 --enable-tpm --enable-tss-tss2 --enable-systemd --enable-swanctl --disable-charon --disable-stroke --disable-scepclient --disable-gmp --enable-openssl --disable-dependency-tracking
+make && make install
+
+cd ~
+mkdir -p pki
+chmod 700 ~/pki
+cd pki
+
+pki --gen --type rsa --size 4096 --outform pem > vpnca.key.pem
+pki --self --flag serverAuth --in vpnca.key.pem --type rsa --digest sha256 --dn "C=JP, O=Organization, CN={{server_ip}}" --ca > vpnca.crt.der
+ 
+pki --gen --type rsa --size 4096 --outform pem > {{server_ip}}.key.pem
+pki --pub --in {{server_ip}}.key.pem --type rsa > {{server_ip}}.csr
+pki --issue --cacert vpnca.crt.der --cakey vpnca.key.pem --digest sha256 --dn "CN={{server_ip}}" --san @{{server_ip}} --san {{server_ip}} --flag serverAuth --flag ikeIntermediate --outform pem < {{server_ip}}.csr > {{server_ip}}.crt.pem
+ 
+cp vpnca.crt.der /etc/swanctl/x509ca/vpnca.crt.der
+cp {{server_ip}}.crt.pem /etc/swanctl/x509/server.crt.pem
+cp {{server_ip}}.key.pem /etc/swanctl/private/server.key.pem
+ 
+chown root:root /etc/swanctl/private/server.key.pem
+chmod 600 /etc/swanctl/private/server.key.pem
+
+vi /etc/sysctl.conf
+#================================start================================
+net.ipv4.conf.all.forwarding = 1
+net.ipv6.conf.all.forwarding = 1
+#=================================end=================================
+sysctl -p
+
+
+vi /etc/crontab
+
+#================================start================================
+@reboot root ip link add ipsec0 type xfrm dev enp0s3 if_id 123 && ip link set ipsec0 up && ip route add {{vpn_ipv4}}/24 dev ipsec0 && ip route add {{vpn_ipv6}}/64 dev ipsec0
+#=================================end=================================
+
+
+vi /etc/swanctl/conf.d/nam.conf
+#================================start================================
+connections {
+   ikev2-eap {
+        version = 2
+        proposals = aes256-sha256-x25519,aes256-sha256-ecp384,aes256-sha256-ecp256,aes256-sha256-modp2048,aes256-sha1-modp2048
+        rekey_time = 0s
+        pools = primary-pool-ipv4, primary-pool-ipv6
+        fragmentation = yes
+        dpd_delay = 30s
+        send_cert = always
+        if_id_in = 123
+        if_id_out = 123
+
+        local-1 {
+            auth = pubkey
+            certs = server.crt.pem
+            id = @{{server_ip}}
+        }
+        remote-1 {
+            auth = eap-mschapv2
+            eap_id = %any
+        }
+        children {
+            ikev2-eap {
+                local_ts = 0.0.0.0/0,::/0
+                rekey_time = 0s
+                dpd_action = clear
+                esp_proposals = aes256-sha256,aes256-sha1
+            }
+        }
+    }
+}
+pools {
+    primary-pool-ipv4 {
+        addrs = {{vpn_ipv4}}/24
+        dns = 8.8.8.8
+    }
+    primary-pool-ipv6 {
+        addrs = {{vpn_ipv6}}/64
+        dns = 2001:4860:4860::8888, 2001:4860:4860::8844
+    }
+}
+secrets {
+    private-server-key {
+        file = server.key.pem
+    }
+    eap-user1 {
+        id = android
+        secret = "password"
+    }
+     eap-user2 {
+        id = windows
+        secret = "password"
+    }
+    eap-user3 {
+        id = ios
+        secret = "password"
+    }
+    eap-user4 {
+        id = macos
+        secret = "password"
+    }
+}
+authorities {
+    vpn-ca {
+        cacert = vpnca.crt.der
+    }
+}
+#=================================end=================================
+systemctl enable strongswan.service
+systemctl start strongswan.service
+
+swanctl -q
+
+apt-get install iptables-persistent -y
+
+iptables -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+iptables -A INPUT -p esp -j ACCEPT
+
+iptables -A INPUT -p udp --dport 500 -j ACCEPT
+iptables -A INPUT -p udp --dport 4500 -j ACCEPT
+
+iptables -A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
+iptables -A FORWARD -s {{vpn_ipv4}}/24 -m policy --dir in --pol ipsec -j ACCEPT
+iptables -A FORWARD -d {{vpn_ipv4}}/24 -m policy --dir out --pol ipsec -j ACCEPT
+
+iptables -t nat -A POSTROUTING -s {{vpn_ipv4}}/24 -o  enp3s0 -j MASQUERADE
+
+ip6tables -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+ip6tables -A INPUT -p esp -j ACCEPT
+
+ip6tables -A INPUT -p udp --dport 500 -j ACCEPT
+ip6tables -A INPUT -p udp --dport 4500 -j ACCEPT
+
+ip6tables -A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
+ip6tables -A FORWARD -s {{vpn_ipv6}}/64 -m policy --dir in --pol ipsec -j ACCEPT
+ip6tables -A FORWARD -d {{vpn_ipv6}}/64 -m policy --dir out --pol ipsec -j ACCEPT
+
+ip6tables -t nat -A POSTROUTING -s {{vpn_ipv6}}/64 -o  enp3s0 -j MASQUERADE
+
+dpkg-reconfigure iptables-persistent
+iptables-save | tee /etc/iptables/rules.v4
+ip6tables-save | tee /etc/iptables/rules.v6
+
+reboot
