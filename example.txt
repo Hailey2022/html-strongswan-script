@@ -1,4 +1,7 @@
-# replace {{anything}}
+# {{server_ip}} => your server ip
+# {{ifce}} => enp3s0 or eth0
+# {{vpn_ipv4}} => 10.10.10.0
+# {{vpn_ipv6}} => fd12:3456:789a:1::
 apt-get update
 apt-get install gcc automake autoconf libtss2-dev libssl-dev libsystemd-dev libtss2-tcti-tabrmd0 libtss2-dev pkg-config build-essential -y
 wget https://download.strongswan.org/strongswan-5.9.9.tar.gz
