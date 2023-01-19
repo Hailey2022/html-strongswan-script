@@ -1,5 +1,5 @@
 apt-get update
-apt-get install gcc automake autoconf libtss2-dev libssl-dev libsystemd-dev libtss2-tcti-tabrmd0  libtss2-dev pkg-config build-essential -y
+apt-get install gcc automake autoconf libtss2-dev libssl-dev libsystemd-dev libtss2-tcti-tabrmd0 libtss2-dev pkg-config build-essential -y
 wget https://download.strongswan.org/strongswan-5.9.9.tar.gz
 
 tar xzvf strongswan-5.9.9.tar.gz
@@ -38,7 +38,7 @@ sysctl -p
 vi /etc/crontab
 
 #================================start================================
-@reboot root ip link add ipsec0 type xfrm dev enp0s3 if_id 123 && ip link set ipsec0 up && ip route add {{vpn_ipv4}}/24 dev ipsec0 && ip route add {{vpn_ipv6}}/64 dev ipsec0
+@reboot root ip link add ipsec0 type xfrm dev {{iface}} if_id 123 && ip link set ipsec0 up && ip route add {{vpn_ipv4}}/24 dev ipsec0 && ip route add {{vpn_ipv6}}/64 dev ipsec0
 #=================================end=================================
 
 
