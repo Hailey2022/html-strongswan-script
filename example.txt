@@ -1,3 +1,4 @@
+# replace {{anything}}
 apt-get update
 apt-get install gcc automake autoconf libtss2-dev libssl-dev libsystemd-dev libtss2-tcti-tabrmd0 libtss2-dev pkg-config build-essential -y
 wget https://download.strongswan.org/strongswan-5.9.9.tar.gz
@@ -42,7 +43,7 @@ vi /etc/crontab
 #=================================end=================================
 
 
-vi /etc/swanctl/conf.d/nam.conf
+vi /etc/swanctl/conf.d/vpn.conf
 #================================start================================
 connections {
    ikev2-eap {
